@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EcoBot — Agente de Reciclaje</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: sans-serif; background: #f4f4f4; display: flex; flex-direction: column; align-items: center; min-height: 100vh; padding: 20px; }
+
+    h1 { margin-bottom: 6px; font-size: 1.4rem; }
+    .subtitle { color: #666; font-size: 0.85rem; margin-bottom: 16px; }
+
+    /* Panel de impacto */
+    .impacto-panel {
+      width: 100%; max-width: 500px;
+      background: white; border: 1px solid #ddd;
+      border-radius: 8px; padding: 12px 16px;
+      margin-bottom: 12px;
+      display: flex; gap: 16px; flex-wrap: wrap;
+      justify-content: space-between;
+    }
+    .impacto-item { text-align: center; flex: 1; min-width: 80px; }
+    .impacto-item .valor { font-size: 1.3rem; font-weight: bold; color: #2e7d32; }
+    .impacto-item .label { font-size: 0.7rem; color: #666; margin-top: 2px; }
+
+    /* Selector de distrito */
+    .config { width: 100%; max-width: 500px; margin-bottom: 10px; display: flex; gap: 8px; align-items: center; }
+    .config label { font-size: 0.85rem; color: #444; white-space: nowrap; }
+    .config select { flex: 1; padding: 6px 8px; border: 1px solid #ccc; border-radius: 6px; font-size: 0.85rem; }
+
+    /* Chat */
+    #chat {
+      width: 100%; max-width: 500px;
+      background: white; border: 1px solid #ddd;
+      border-radius: 8px; height: 380px;
+      overflow-y: auto; padding: 12px;
+      margin-bottom: 10px;
+    }
+    .msg { margin: 8px 0; }
+    .user { text-align: right; }
+    .user span { background: #ddd; padding: 8px 12px; border-radius: 10px; display: inline-block; max-width: 80%; text-align: left; }
+    .agent-wrap { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+    .agent span { background: #e8f5e9; padding: 8px 12px; border-radius: 10px; display: inline-block; max-width: 80%; }
+
+    /* Tag de categoría */
+    .tag {
+      font-size: 0.72rem; font-weight: bold; padding: 3px 8px;
+      border-radius: 12px; display: inline-block;
+    }
+    .tag-RECICLABLE  { background: #c8e6c9; color: #1b5e20; }
+    .tag-ORGANICO    { background: #fff9c4; color: #f57f17; }
+    .tag-ESPECIAL    { background: #ffe0b2; color: #e65100; }
+    .tag-NO_RECICLABLE { background: #ffcdd2; color: #b71c1c; }
+
+    /* Botón "Ya lo reciclé" */
+    .btn-recicle {
+      background: #2e7d32; color: white;
+      border: none; border-radius: 6px;
+      padding: 6px 14px; font-size: 0.8rem;
+      cursor: pointer;
+    }
+    .btn-recicle:hover { background: #1b5e20; }
+    .btn-recicle:disabled { background: #aaa; cursor: default; }
+
+    /* Curiosidad ambiental */
+    .curiosidad {
+      font-size: 0.78rem; color: #2e7d32;
+      background: #f1f8e9; border-left: 3px solid #66bb6a;
+      padding: 6px 10px; border-radius: 4px;
+      max-width: 80%;
+    }
+
+    /* Input */
+    #form { display: flex; gap: 8px; width: 100%; max-width: 500px; }
+    #input { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 0.95rem; }
+    button[type=submit] { padding: 10px 18px; background: #1565c0; color: white; border: none; border-radius: 6px; cursor: pointer; }
+    button[type=submit]:hover { background: #0d47a1; }
+  </style>
+</head>
+<body>
+
+  <h1>♻️ EcoBot</h1>
+  <p class="subtitle">Dime qué residuo tienes y te digo qué hacer con él.</p>
+
+  <!-- Panel de impacto acumulado -->
+  <div class="impacto-panel">
+    <div class="impacto-item">
+      <div class="valor" id="val-puntos">0</div>
+      <div class="label">Puntos</div>
+    </div>
+    <div class="impacto-item">
+      <div class="valor" id="val-co2">0.0 kg</div>
+      <div class="label">CO₂ evitado</div>
+    </div>
+    <div class="impacto-item">
+      <div class="valor" id="val-arboles">0</div>
+      <div class="label">Árboles protegidos</div>
+    </div>
+    <div class="impacto-item">
+      <div class="valor" id="val-agua">0.0 L</div>
+      <div class="label">Agua ahorrada</div>
+    </div>
+  </div>
+
+  <!-- Selector de distrito -->
+  <div class="config">
+    <label>Tu distrito:</label>
+    <select id="distrito">
+      <option value="general">Selecciona tu distrito</option>
+      <option value="Miraflores">Miraflores</option>
+      <option value="San Isidro">San Isidro</option>
+      <option value="Surco">Surco</option>
+      <option value="Otros">Otro distrito</option>
+    </select>
+  </div>
+
+  <!-- Chat -->
+  <div id="chat"></div>
+
+  <form id="form">
+    <input id="input" type="text" placeholder="Ej: botella de aceite, pilas, caja de pizza..." autocomplete="off" />
+    <button type="submit">Enviar</button>
+  </form>
+
+  <script>
+    const chat = document.getElementById('chat');
+    const form = document.getElementById('form');
+    const input = document.getElementById('input');
+
+    let messages = [];
+    let totalPuntos = 0, totalCo2 = 0, totalArboles = 0, totalAgua = 0;
+
+    // Curiosidades de impacto ambiental según categoría
+    const curiosidades = {
+      RECICLABLE: [
+        "♻️ Reciclar una botella de plástico ahorra energía suficiente para cargar un celular 6 horas.",
+        "🌊 El plástico reciclado evita que ese material llegue al océano y dañe la vida marina.",
+        "💡 Reciclar papel reduce el uso de agua en un 60% comparado con producir papel nuevo.",
+        "🏭 Reciclar aluminio gasta solo el 5% de la energía que se necesita para producirlo desde cero.",
+      ],
+      ORGANICO: [
+        "🌱 Los residuos orgánicos compostados devuelven nutrientes al suelo y reducen metano en rellenos.",
+        "🍃 El compost reduce la necesidad de fertilizantes químicos en un 30%.",
+        "🌍 Separar orgánicos reduce hasta un 40% el volumen de basura que va al relleno sanitario.",
+      ],
+      ESPECIAL: [
+        "⚡ Una pila mal desechada puede contaminar hasta 600,000 litros de agua subterránea.",
+        "📱 Los celulares contienen oro, plata y cobre recuperables — reciclarlos ahorra minería.",
+        "🛢️ Un litro de aceite vegetal usado puede contaminar 1,000 litros de agua si va por el desagüe.",
+      ],
+      NO_RECICLABLE: [
+        "🗑️ Separar correctamente los no reciclables evita contaminar el flujo de reciclaje.",
+        "♻️ Desechar bien los residuos no reciclables ayuda a que el resto sí se recicle correctamente.",
+        "🌍 La separación correcta, aunque no siempre reciclable, reduce la contaminación cruzada.",
+      ],
+    };
+
+    function getCuriosidad(categoria) {
+      const lista = curiosidades[categoria];
+      if (!lista) return null;
+      return lista[Math.floor(Math.random() * lista.length)];
+    }
+
+    function actualizarPanel() {
+      document.getElementById('val-puntos').textContent = totalPuntos;
+      document.getElementById('val-co2').textContent = totalCo2.toFixed(2) + ' kg';
+      document.getElementById('val-arboles').textContent = totalArboles.toFixed(3);
+      document.getElementById('val-agua').textContent = totalAgua.toFixed(1) + ' L';
+    }
+
+    function addUser(text) {
+      const div = document.createElement('div');
+      div.className = 'msg user';
+      div.innerHTML = `<span>${text}</span>`;
+      chat.appendChild(div);
+      chat.scrollTop = chat.scrollHeight;
+    }
+
+    function addAgent(text, categoria, impacto) {
+      const wrap = document.createElement('div');
+      wrap.className = 'msg agent-wrap';
+
+      // Burbuja de respuesta
+      const bubble = document.createElement('div');
+      bubble.className = 'agent';
+      bubble.innerHTML = `<span>${text}</span>`;
+      wrap.appendChild(bubble);
+
+      // Tag de categoría
+      if (categoria && categoria !== 'CONSULTA') {
+        const etiquetas = {
+          RECICLABLE: '✓ Reciclable',
+          ORGANICO: '🌱 Orgánico',
+          ESPECIAL: '⚠ Punto especial',
+          NO_RECICLABLE: '✗ No reciclable',
+        };
+        const tag = document.createElement('span');
+        tag.className = `tag tag-${categoria}`;
+        tag.textContent = etiquetas[categoria] || categoria;
+        wrap.appendChild(tag);
+      }
+
+      // Botón "Ya lo reciclé" solo si tiene impacto
+      if (categoria && categoria !== 'CONSULTA') {
+        const btn = document.createElement('button');
+        btn.className = 'btn-recicle';
+        btn.textContent = '✓ Ya lo reciclé';
+        btn.onclick = () => {
+          btn.disabled = true;
+          btn.textContent = '¡Registrado!';
+
+          // Sumar impacto
+          totalPuntos += impacto.puntos;
+          totalCo2 += impacto.co2;
+          totalArboles += impacto.arboles;
+          totalAgua += impacto.agua;
+          actualizarPanel();
+
+          // Mostrar curiosidad
+          const texto = getCuriosidad(categoria);
+          if (texto) {
+            const cur = document.createElement('div');
+            cur.className = 'curiosidad';
+            cur.textContent = texto;
+            wrap.appendChild(cur);
+            chat.scrollTop = chat.scrollHeight;
+          }
+        };
+        wrap.appendChild(btn);
+      }
+
+      chat.appendChild(wrap);
+      chat.scrollTop = chat.scrollHeight;
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const text = input.value.trim();
+      if (!text) return;
+
+      addUser(text);
+      messages.push({ role: 'user', content: text });
+      input.value = '';
+
+      // Mensaje de espera
+      const loading = document.createElement('div');
+      loading.className = 'msg agent-wrap';
+      loading.innerHTML = '<div class="agent"><span>Consultando...</span></div>';
+      chat.appendChild(loading);
+      chat.scrollTop = chat.scrollHeight;
+
+      try {
+        const distrito = document.getElementById('distrito').value;
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ messages, distrito }),
+        });
+        const data = await res.json();
+        chat.removeChild(loading);
+
+        if (data.error) { addAgent('Error: ' + data.error, null, null); return; }
+
+        addAgent(data.reply, data.categoria, data.impacto);
+        messages.push({ role: 'assistant', content: data.reply });
+      } catch (err) {
+        chat.removeChild(loading);
+        addAgent('Error de conexión. Intenta de nuevo.', null, null);
+      }
+    });
+  </script>
+</body>
+</html>
